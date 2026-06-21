@@ -70,7 +70,8 @@ async function buildFeed(feed) {
   // drop out of Tradable within seconds (independent safety net).
   const wd = readSnapshot('watchdog.json');
   const quarantine = new Map((wd?.leaks || []).map((l) => [l.mint, l.reason]));
-  const revived = new Set((wd?.revivals || []).map((r) => r.mint)); // bundle sold + near launch
+  const revived = new Set((wd?.revivals || []).map((r) => r.mint));   // bundle sold + near launch
+  const cleared = new Set((wd?.falseBlocks || []).map((f) => f.mint)); // wrongly blocked, clean on every gate
   const body = {
     updatedAt: meta?.updatedAt ?? 0,
     ws: meta?.ws,
@@ -88,6 +89,10 @@ async function buildFeed(feed) {
         // no longer hides it).
         e.hidden = false; e.hideReason = null; e.bundled = false;
         e.dipPct = 0; e.maxDipPct = 0; e.revived = true;
+      }
+      else if (cleared.has(e.mint)) {
+        // watchdog proved this block wrong (clean on every gate) — un-block it.
+        e.hidden = false; e.hideReason = null; e.bundled = false;
       }
       return e;
     }),

@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 import { config } from './lib/config.mjs';
 import { makeRpc, mineHolders } from './lib/rpc.mjs';
-import { bundleVerdict, holderVerdict, isCratered } from './lib/gates.mjs';
+import { bundleVerdict, holderVerdict, isCratered, THRESHOLDS } from './lib/gates.mjs';
 import { getCoin } from './lib/pumpfun.mjs';
 import { writeSnapshot } from './lib/store.mjs';
 import { getCoins } from './lib/db.mjs';
@@ -50,13 +50,20 @@ function auditBlocked() {
   for (const feed of ['new', 'bonded']) {
     for (const c of feedCoins(feed)) {
       if (!c.hidden) continue;
-      const r = c.hideReason || '';
-      let wrong = false, note = '';
-      if (r === 'bundle' || r === 'launch-slot-cluster' || r === 'few-launch-txns') {
-        wrong = bundleVerdict({ maxPerSlot: c.maxPerSlot }) == null; // not actually slot-clustered
-        note = `maxPerSlot=${c.maxPerSlot} txns=${c.launchTxns}`;
+      // A true false-block: hidden, but NONE of the gates actually hold per the
+      // stored signals. Checking every gate (not just bundle) makes it safe to
+      // auto-clear — we never un-hide a coin that's genuinely a rug/crater/etc.
+      const real =
+        bundleVerdict({ maxPerSlot: c.maxPerSlot, lifetimeTxns: c.launchTxns, holderTop1: c.holderTop1 }) ||
+        holderVerdict({ creatorPct: c.creatorPct, holderTop1: c.holderTop1 }) ||
+        (isCratered(c.dipPct) ? 'crater' : null) ||
+        (c.earlyDumped ? 'early-dump' : null);
+      if (!real) {
+        out.push({
+          mint: c.mint, feed, symbol: c.symbol ?? null, was: c.hideReason ?? null,
+          note: `maxPerSlot=${c.maxPerSlot} top1=${c.holderTop1} dev=${c.creatorPct} dip=${c.dipPct}`,
+        });
       }
-      if (wrong) out.push({ mint: c.mint, feed, symbol: c.symbol ?? null, reason: r, note });
     }
   }
   return out;
@@ -92,7 +99,7 @@ function bundledCandidates() {
   const out = [];
   for (const feed of ['new', 'bonded']) {
     for (const c of feedCoins(feed)) {
-      if (bundleVerdict({ maxPerSlot: c.maxPerSlot })) out.push([c, feed]);
+      if (typeof c.maxPerSlot === 'number' && c.maxPerSlot >= THRESHOLDS.BUNDLE_MAX_PER_SLOT) out.push([c, feed]);
     }
   }
   return out;
@@ -161,7 +168,7 @@ async function tick() {
     leaks: [...quarantine.entries()].map(([mint, v]) => ({ mint, ...v })),
     quarantine: [...quarantine.keys()],
     falseBlockCount: falseBlocks.length,
-    falseBlocks: falseBlocks.slice(0, 50),
+    falseBlocks: falseBlocks.slice(0, 500),
     revivalCount: revivals.size,
     revivals: [...revivals.entries()].map(([mint, v]) => ({ mint, ...v })),
   });

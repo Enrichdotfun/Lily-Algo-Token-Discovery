@@ -93,15 +93,15 @@ async function gateCoin(c) {
     applyMcap(c, meta); // post-bond trades don't stream, so mcap comes from the API
     const pda = bondingCurvePda(c.mint);
     const launch = await launchTxnStats(rpc, pda, 20).catch(() => null);
-    if (launch) {
-      c.launchTxns = launch.count;
-      c.maxPerSlot = launch.maxPerSlot;
-      if (bundleVerdict({ maxPerSlot: launch.maxPerSlot })) { c.bundled = true; c.bundleReason = 'launch-slot-cluster'; }
-    }
+    if (launch) { c.launchTxns = launch.count; c.maxPerSlot = launch.maxPerSlot; }
     const holders = await mineHolders(rpc, c.mint, meta?.creator).catch(() => ({}));
     c.holderTop1 = holders.holderTop1 ?? null;
     c.holderTop10 = holders.holderTop10 ?? null;
     c.creatorPct = holders.creatorPct ?? null;
+    // bundle only matters while the coin is young + still concentrated
+    if (bundleVerdict({ maxPerSlot: c.maxPerSlot, lifetimeTxns: c.launchTxns, holderTop1: c.holderTop1 })) {
+      c.bundled = true; c.bundleReason = 'launch-slot-cluster';
+    }
     const hv = holderVerdict({ creatorPct: c.creatorPct, holderTop1: c.holderTop1 });
     if (hv) { c.rugFake = true; c.rugReason = hv; }
   } catch { /* leave flags as-is */ }
