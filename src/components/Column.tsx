@@ -53,57 +53,60 @@ export function Column({
           </span>
         </div>
 
-        {/* row 2: tabs */}
-        {tabs ? (
-          <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
-            {tabs.map((t) => {
-              const on = t.key === activeTab;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => onTab?.(t.key)}
+        {/* controls row: tabs (left) · status + sort (right, same line) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          {tabs ? (
+            <div style={{ display: 'flex', gap: 4 }}>
+              {tabs.map((t) => {
+                const on = t.key === activeTab;
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => onTab?.(t.key)}
+                    style={{
+                      fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 7, cursor: 'pointer',
+                      color: on ? '#0a0a0f' : 'rgba(203,213,225,0.85)',
+                      background: on ? accent : 'rgba(148,163,184,0.08)',
+                      border: '1px solid rgba(148,163,184,0.14)',
+                    }}
+                  >
+                    {t.label} <span style={{ opacity: 0.7 }}>{t.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            {status ? <span style={{ fontSize: 10, color: 'rgba(148,163,184,0.4)' }}>{status}</span> : null}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10, color: 'rgba(148,163,184,0.4)' }}>sort</span>
+              <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                <select
+                  value={sortKey}
+                  onChange={(e) => onSortKey(e.target.value as SortKey)}
                   style={{
-                    fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 7, cursor: 'pointer',
-                    color: on ? '#0a0a0f' : 'rgba(203,213,225,0.85)',
-                    background: on ? accent : 'rgba(148,163,184,0.08)',
-                    border: '1px solid rgba(148,163,184,0.14)',
+                    fontSize: 11, padding: '3px 6px', color: '#e5e7eb',
+                    background: 'rgba(148,163,184,0.1)', border: '1px solid rgba(148,163,184,0.16)',
+                    borderRadius: '6px 0 0 6px', outline: 'none', cursor: 'pointer', appearance: 'none',
                   }}
                 >
-                  {t.label} <span style={{ opacity: 0.7 }}>{t.count}</span>
+                  {sortOptions.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                </select>
+                <button
+                  onClick={() => onSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
+                  title={sortDir === 'desc' ? 'highest first' : 'lowest first'}
+                  style={{
+                    fontSize: 11, padding: '3px 7px', cursor: 'pointer', color: 'rgba(203,213,225,0.95)',
+                    background: 'rgba(148,163,184,0.16)', border: '1px solid rgba(148,163,184,0.16)',
+                    borderLeft: 'none', borderRadius: '0 6px 6px 0', fontWeight: 700,
+                  }}
+                >
+                  {sortDir === 'desc' ? '↓' : '↑'}
                 </button>
-              );
-            })}
+              </div>
+            </div>
           </div>
-        ) : null}
-
-        {/* row 3: sort dropdown + direction tab .... status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
-          <span style={{ fontSize: 10, color: 'rgba(148,163,184,0.4)' }}>sort</span>
-          <div style={{ display: 'flex', alignItems: 'stretch' }}>
-            <select
-              value={sortKey}
-              onChange={(e) => onSortKey(e.target.value as SortKey)}
-              style={{
-                fontSize: 11, padding: '3px 6px', color: '#e5e7eb',
-                background: 'rgba(148,163,184,0.1)', border: '1px solid rgba(148,163,184,0.16)',
-                borderRadius: '6px 0 0 6px', outline: 'none', cursor: 'pointer', appearance: 'none',
-              }}
-            >
-              {sortOptions.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-            </select>
-            <button
-              onClick={() => onSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
-              title={sortDir === 'desc' ? 'highest first' : 'lowest first'}
-              style={{
-                fontSize: 11, padding: '3px 7px', cursor: 'pointer', color: 'rgba(203,213,225,0.95)',
-                background: 'rgba(148,163,184,0.16)', border: '1px solid rgba(148,163,184,0.16)',
-                borderLeft: 'none', borderRadius: '0 6px 6px 0', fontWeight: 700,
-              }}
-            >
-              {sortDir === 'desc' ? '↓' : '↑'}
-            </button>
-          </div>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'rgba(148,163,184,0.4)' }}>{status}</span>
         </div>
 
         <p style={{ margin: '6px 0 0', fontSize: 10.5, color: 'rgba(148,163,184,0.4)', lineHeight: 1.3 }}>{subtitle}</p>
