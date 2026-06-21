@@ -20,7 +20,7 @@ import { holderVerdict, earlyDumpVerdict, isCratered, THRESHOLDS } from './lib/g
 import { getCoin } from './lib/pumpfun.mjs';
 import { writeSnapshot } from './lib/store.mjs';
 import { load } from './lib/metrics.mjs';
-import { persist } from './lib/db.mjs';
+import { persist, getCoins } from './lib/db.mjs';
 
 const B = config.bonded;
 const rpc = makeRpc(config.rpcUrl);
@@ -204,8 +204,40 @@ const portal = new PumpPortal({
   },
 });
 
+// Rehydrate the board from the last persisted snapshot so a restart/redeploy
+// doesn't drop live tracking (the periodic loops below then refresh mcap and
+// re-gate as needed). Without this, every redeploy leaves stale rows behind.
+function hydrate(row, now) {
+  return {
+    mint: row.mint, name: row.name ?? null, symbol: row.symbol ?? null,
+    bondedAt: row.bondedAt ?? now, lastTradeAt: now,
+    trades: row.trades ?? 0, volumeSol: row.volumeSol ?? 0,
+    firstLevel: null, athLevel: row.athMcapSol ?? null, lastLevel: row.lastMcapSol ?? null,
+    marketCapUsd: row.marketCapUsd ?? null,
+    dipPct: row.dipPct ?? 0, maxDipPct: row.maxDipPct ?? 0,
+    reached: row.reached ?? { d30: false, d40: false, d60: false },
+    launchTxns: row.launchTxns ?? null,
+    bundled: !!row.bundled, rugFake: !!row.rugFake, rugReason: row.rugReason ?? null,
+    earlyDumped: !!row.earlyDumped,
+    holderTop1: row.holderTop1 ?? null, holderTop10: row.holderTop10 ?? null, creatorPct: row.creatorPct ?? null,
+    checked: !!row.checked, gating: false, lastGate: 0, mcapAt: 0,
+    earlyClosed: true, earlyNet: 0, earlyEndLevel: null,
+  };
+}
+try {
+  const now = Date.now();
+  let n = 0;
+  for (const row of getCoins('bonded', B.trackMs)) {
+    if (!row?.mint || board.has(row.mint) || now - (row.bondedAt ?? 0) > B.trackMs) continue;
+    board.set(row.mint, hydrate(row, now));
+    n++;
+  }
+  console.log(`[bonded] rehydrated ${n} coins from db`);
+} catch (e) { console.log('[bonded] rehydrate skipped:', e?.message); }
+
 console.log('[bonded] streaming migrations from', config.wsUrl);
 portal.start();
+for (const c of board.values()) portal.watchTrades(c.mint); // resume tape for hydrated coins
 flush();
 setInterval(flush, 4000);
 
