@@ -16,8 +16,9 @@
 import { config } from './lib/config.mjs';
 import { PumpPortal } from './lib/pumpportal.mjs';
 import { makeRpc, bondingCurvePda, launchTxnStats, mineHolders } from './lib/rpc.mjs';
-import { bundleVerdict, holderVerdict, earlyDumpVerdict, isCratered, THRESHOLDS } from './lib/gates.mjs';
+import { bundleVerdict, holderVerdict, isCratered, THRESHOLDS } from './lib/gates.mjs';
 import { getCoin } from './lib/pumpfun.mjs';
+import { getDexMcap } from './lib/dex.mjs';
 import { writeSnapshot } from './lib/store.mjs';
 import { load } from './lib/metrics.mjs';
 import { persist, getCoins } from './lib/db.mjs';
@@ -100,7 +101,7 @@ async function gateCoin(c) {
     const meta = await getCoin(c.mint).catch(() => null);
     c.name = c.name || meta?.name || null;
     c.symbol = c.symbol || meta?.symbol || null;
-    applyMcap(c, meta); // post-bond trades don't stream, so mcap comes from the API
+    applyMcap(c, await mcapUsdFor(c.mint, meta)); // live AMM mcap (DexScreener), USD
     const pda = bondingCurvePda(c.mint);
     const launch = await launchTxnStats(rpc, pda, 20).catch(() => null);
     if (launch) { c.launchTxns = launch.count; c.maxPerSlot = launch.maxPerSlot; }
@@ -125,56 +126,42 @@ async function gateCoin(c) {
 }
 
 // Post-migration trades don't come through subscribeTokenTrade, so the live trade
-// tape (onTrade) is usually empty for bonded coins. Pull mcap/dip from the pump.fun
-// API instead — getCoin exposes both market_cap (SOL) and usd_market_cap.
-function applyMcap(c, meta) {
+// tape (onTrade) is empty for bonded coins — mcap/dip come from a periodic refresh.
+// We read the LIVE AMM mcap from DexScreener (USD), falling back to pump.fun only
+// when the pool isn't indexed yet. pump.fun's own market_cap is the frozen bonding
+// curve value AND its API is blocked from datacenter IPs, so it can't be trusted
+// post-bond. See lib/dex.mjs.
+async function mcapUsdFor(mint, meta) {
+  const dex = await getDexMcap(mint).catch(() => null);
+  if (dex?.marketCapUsd != null) return dex.marketCapUsd;
+  return meta?.marketCapUsd ?? null; // fallback: pump.fun (only useful pre-index)
+}
+
+// dip/ath are tracked in USD here (a ratio, so the unit just has to be consistent).
+function applyMcap(c, mcUsd) {
   c.mcapAt = Date.now();
-  if (!meta) return;
-  if (meta.marketCapUsd != null) c.marketCapUsd = meta.marketCapUsd;
-  const level = meta.marketCapSol;
-  if (level == null) return;
-  if (c.firstLevel == null) c.firstLevel = level;
-  if (c.athLevel == null || level > c.athLevel) c.athLevel = level;
-  c.lastLevel = level;
-  if (c.athLevel) {
-    c.dipPct = (level / c.athLevel - 1) * 100;
-    if (c.dipPct < c.maxDipPct) c.maxDipPct = c.dipPct;
-  }
+  if (mcUsd == null) return;
+  c.marketCapUsd = mcUsd;
+  if (c.firstLevel == null) c.firstLevel = mcUsd;
+  if (c.athLevel == null || mcUsd > c.athLevel) c.athLevel = mcUsd;
+  c.lastLevel = mcUsd;
+  c.dipPct = c.athLevel ? (mcUsd / c.athLevel - 1) * 100 : 0;
+  if (c.dipPct < c.maxDipPct) c.maxDipPct = c.dipPct;
 }
 
 async function refreshMcap(c) {
   c.mcapAt = Date.now();
-  applyMcap(c, await getCoin(c.mint).catch(() => null));
+  applyMcap(c, await mcapUsdFor(c.mint, null));
 }
 
+// Post-migration AMM trades rarely stream through subscribeTokenTrade, and a stray
+// one carries a SOL-denominated mcap that would corrupt the USD-based dip/ath. So
+// only count activity here; mcap/dip/ath come exclusively from the DexScreener
+// refresh (applyMcap), which is the single source of truth for a bonded coin.
 function onTrade(c, m) {
-  const level = m.marketCapSol;
-  if (level == null) return;
   c.trades++;
   c.lastTradeAt = Date.now();
   c.volumeSol += m.solAmount || 0;
-  if (c.firstLevel == null) c.firstLevel = level;
-  if (c.athLevel == null || level > c.athLevel) c.athLevel = level;
-  c.lastLevel = level;
-  c.dipPct = c.athLevel ? (level / c.athLevel - 1) * 100 : 0;
-  if (c.dipPct < c.maxDipPct) c.maxDipPct = c.dipPct;
-  if (c.dipPct <= -30) c.reached.d30 = true;
-  if (c.dipPct <= -40) c.reached.d40 = true;
-  if (c.dipPct <= -60) c.reached.d60 = true;
-
-  // early-window strength: net flow + return over the first minute after bond
-  if (!c.earlyClosed) {
-    c.earlyNet += (m.txType === 'buy' ? (m.solAmount || 0) : -(m.solAmount || 0));
-    c.earlyEndLevel = level;
-    if (Date.now() - c.bondedAt >= B.earlyWindowMs) {
-      c.earlyClosed = true;
-      const ret = c.firstLevel ? (c.earlyEndLevel / c.firstLevel - 1) * 100 : 0;
-      if (earlyDumpVerdict({ earlyReturnPct: ret, earlyNetSol: c.earlyNet })) {
-        c.earlyDumped = true;
-        c.earlyReturnPct = ret;
-      }
-    }
-  }
 }
 
 const portal = new PumpPortal({

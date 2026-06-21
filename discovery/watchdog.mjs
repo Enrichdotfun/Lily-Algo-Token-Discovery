@@ -15,11 +15,24 @@ import { config } from './lib/config.mjs';
 import { makeRpc, mineHolders } from './lib/rpc.mjs';
 import { bundleVerdict, holderVerdict, isCratered, THRESHOLDS } from './lib/gates.mjs';
 import { getCoin } from './lib/pumpfun.mjs';
+import { getDexMcap } from './lib/dex.mjs';
 import { writeSnapshot } from './lib/store.mjs';
 import { getCoins } from './lib/db.mjs';
 
 const W = config.watchdog;
 const rpc = makeRpc(config.rpcUrl);
+
+// Live mcap (USD) for a coin under check. Bonded coins trade on the AMM, where the
+// truth is DexScreener (pump.fun reports the frozen curve value and is blocked from
+// datacenter IPs); pre-bond ("new") coins are still on the curve, where pump.fun
+// (or the last snapshot) is correct. Falls back to the snapshot in both cases.
+async function liveMcUsd(c, feed, meta) {
+  if (feed === 'bonded') {
+    const dex = await getDexMcap(c.mint).catch(() => null);
+    if (dex?.marketCapUsd != null) return dex.marketCapUsd;
+  }
+  return meta?.marketCapUsd ?? c.marketCapUsd ?? null;
+}
 const lastChecked = new Map();    // mint -> ts of last verification
 const quarantine = new Map();     // mint -> { reason, at, feed, ... }
 const revivals = new Map();       // mint -> { at, feed, mcUsd, top1, ... } bundle-sold + near-launch
@@ -74,7 +87,7 @@ async function verify(c, feed) {
   lastChecked.set(c.mint, Date.now());
   verified++;
   const meta = await getCoin(c.mint).catch(() => null);
-  const mcUsd = meta?.marketCapUsd ?? c.marketCapUsd ?? null;
+  const mcUsd = await liveMcUsd(c, feed, meta);
   const holders = await mineHolders(rpc, c.mint, meta?.creator).catch(() => ({}));
   const top1 = holders.holderTop1 ?? c.holderTop1 ?? null;
   const creatorPct = holders.creatorPct ?? c.creatorPct ?? null;
@@ -114,7 +127,7 @@ function bundledCandidates() {
 async function scanRevival(c, feed) {
   revivalChecked.set(c.mint, Date.now());
   const meta = await getCoin(c.mint).catch(() => null);
-  const mcUsd = meta?.marketCapUsd ?? c.marketCapUsd ?? null;
+  const mcUsd = await liveMcUsd(c, feed, meta);
   const holders = await mineHolders(rpc, c.mint, meta?.creator).catch(() => ({}));
   const top1 = holders.holderTop1 ?? null;
   const creatorPct = holders.creatorPct ?? null;
