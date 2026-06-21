@@ -17,18 +17,27 @@ function sortCoins<T>(coins: T[], key: SortKey, dir: SortDir, val: (c: T, k: Sor
 
 export function App() {
   const oldFeed = useFeed<OldCoin>('/api/old');
+  const newFeed = useFeed<BondedCoin>('/api/new');
   const bondedFeed = useFeed<BondedCoin>('/api/bonded');
 
   const [oldSort, setOldSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'vol', dir: 'desc' });
+  const [newSort, setNewSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'age', dir: 'asc' });
   const [bondSort, setBondSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'age', dir: 'asc' });
+  const [newTab, setNewTab] = useState<'unchecked' | 'tradable' | 'blocked'>('tradable');
   const [bondTab, setBondTab] = useState<'unchecked' | 'tradable' | 'blocked'>('tradable');
 
   const oldCoins = oldFeed.data?.coins ?? [];
-  const bondAll = bondedFeed.data?.coins ?? [];
-  // Three mutually-exclusive states a graduate flows through:
+  // New pairs and Bonded share the same flow:
   //   blocked   — tripped a gate (bundle / rug / early-dump / crater), at any point
   //   tradable  — holder check ran AND nothing tripped
   //   unchecked — still pending the holder check, nothing tripped yet
+  const newAll = newFeed.data?.coins ?? [];
+  const newBlocked = newAll.filter((c) => c.hidden);
+  const newTradable = newAll.filter((c) => c.checked && !c.hidden);
+  const newUnchecked = newAll.filter((c) => !c.checked && !c.hidden);
+  const newActive = newTab === 'unchecked' ? newUnchecked : newTab === 'blocked' ? newBlocked : newTradable;
+
+  const bondAll = bondedFeed.data?.coins ?? [];
   const bondBlocked = bondAll.filter((c) => c.hidden);
   const bondTradable = bondAll.filter((c) => c.checked && !c.hidden);
   const bondUnchecked = bondAll.filter((c) => !c.checked && !c.hidden);
@@ -36,12 +45,13 @@ export function App() {
 
   const oldSorted = sortCoins(oldCoins, oldSort.key, oldSort.dir,
     (c, k) => k === 'age' ? c.ageMs : k === 'mc' ? (c.marketCapUsd ?? 0) : c.recentTrades);
-  const bondSorted = sortCoins(bondActive, bondSort.key, bondSort.dir,
-    (c, k) => k === 'age' ? c.ageMs : k === 'mc' ? (c.marketCapUsd ?? 0) : (c.volumeUsd ?? 0));
+  const mcVol = (c: BondedCoin, k: SortKey) => k === 'age' ? c.ageMs : k === 'mc' ? (c.marketCapUsd ?? 0) : (c.volumeUsd ?? 0);
+  const newSorted = sortCoins(newActive, newSort.key, newSort.dir, mcVol);
+  const bondSorted = sortCoins(bondActive, bondSort.key, bondSort.dir, mcVol);
 
   const allMints = useMemo(
-    () => [...oldSorted, ...bondSorted].slice(0, 90).map((c) => c.mint),
-    [oldSorted, bondSorted],
+    () => [...oldSorted, ...newSorted, ...bondSorted].slice(0, 120).map((c) => c.mint),
+    [oldSorted, newSorted, bondSorted],
   );
   const meta = useTokenMeta(allMints);
   const mm = (mint: string): TokenMeta | undefined => meta[mint];
@@ -80,8 +90,41 @@ export function App() {
           {oldCoins.length === 0 ? <Empty /> : null}
         </Column>
 
-        {/* ---------- NEW PAIRS — not part of the public repo ---------- */}
-        <Unavailable title="New pairs" accent="rgba(125,211,252,0.55)" />
+        {/* ---------- NEW PAIRS (Unchecked | Blocked | Tradable) ---------- */}
+        <Column
+          title="New pairs" accent="rgba(125,211,252,0.9)"
+          subtitle={
+            newTab === 'unchecked' ? 'Fresh launches still being checked.'
+            : newTab === 'blocked' ? 'Launches that tripped a gate (bundle / rug / dump / crater).'
+            : 'Launches that passed every gate (bundle / rug / dump).'}
+          count={newActive.length} apiLoad={newFeed.data?.api}
+          status={feedStatus(newFeed.data?.updatedAt, newFeed.error)}
+          sortKey={newSort.key} sortDir={newSort.dir}
+          sortOptions={[{ key: 'age', label: 'Age' }, { key: 'mc', label: 'MC' }, { key: 'vol', label: 'Vol' }]}
+          onSortKey={(k) => setNewSort((s) => ({ ...s, key: k }))} onSortDir={(d) => setNewSort((s) => ({ ...s, dir: d }))}
+          tabs={[
+            { key: 'unchecked', label: 'Unchecked', count: newUnchecked.length },
+            { key: 'blocked', label: 'Blocked', count: newBlocked.length },
+            { key: 'tradable', label: 'Tradable', count: newTradable.length },
+          ]}
+          activeTab={newTab} onTab={(k) => setNewTab(k as 'unchecked' | 'tradable' | 'blocked')}
+        >
+          {newSorted.map((c) => {
+            const stats: Stat[] = [
+              { label: 'Dev', value: pct(c.creatorPct), tone: devTone(c.creatorPct) },
+              { label: 'T10', value: pct(c.holderTop10), tone: t10Tone(c.holderTop10) },
+              { label: 'dip', value: `${c.dipPct.toFixed(0)}%`, tone: dipTone(c.dipPct) },
+            ];
+            return (
+              <CoinCard key={c.mint} mint={c.mint} symbol={c.symbol} meta={mm(c.mint)}
+                ticker={c.symbol || c.mint.slice(0, 6)} name={c.name} age={c.ageMs} mcapUsd={c.marketCapUsd}
+                secondary={[{ label: 'V', value: fmtUsd(c.volumeUsd) }, { label: 'TX', value: String(c.trades) }]}
+                stats={stats} pill={c.hidden ? { label: c.hideReason || 'blocked', tone: 'bad' } : !c.checked ? { label: 'checking…', tone: 'warn' } : { label: 'tradable', tone: 'good' }}
+              />
+            );
+          })}
+          {newActive.length === 0 ? <Empty hint="waiting for fresh launches…" /> : null}
+        </Column>
 
         {/* ---------- BONDED (Unchecked | Tradable) ---------- */}
         <Column
@@ -120,28 +163,6 @@ export function App() {
         </Column>
       </div>
     </div>
-  );
-}
-
-/** A column whose feature is not shipped in the open-source build. */
-function Unavailable({ title, accent }: { title: string; accent: string }) {
-  return (
-    <section style={{ display: 'flex', flexDirection: 'column', background: '#0a0a0f', border: '1px solid rgba(148,163,184,0.12)', borderRadius: 12, overflow: 'hidden' }}>
-      <header style={{ padding: '10px 12px', borderBottom: '1px solid rgba(148,163,184,0.12)', background: '#0c0c12', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ width: 7, height: 7, borderRadius: 999, background: accent, flex: 'none' }} />
-        <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'rgba(229,231,235,0.7)' }}>{title}</h2>
-        <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'rgba(148,163,184,0.5)', border: '1px solid rgba(148,163,184,0.14)', padding: '1px 8px', borderRadius: 999 }}>private</span>
-      </header>
-      <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center' }}>
-        <div>
-          <div style={{ fontSize: 26, marginBottom: 10, opacity: 0.5 }}>🔒</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'rgba(229,231,235,0.8)' }}>Unavailable in the public repo</div>
-          <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.5)', marginTop: 6, maxWidth: 240, lineHeight: 1.45 }}>
-            The new-pairs discovery + gating is kept private and isn’t part of this open-source build.
-          </div>
-        </div>
-      </div>
-    </section>
   );
 }
 

@@ -10,8 +10,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SERVICES = [
   { name: 'api    ', file: 'server/server.mjs' },
   { name: 'old    ', file: 'discovery/old-prebond.mjs' },
+  { name: 'new    ', file: 'discovery/new-pairs.mjs' },
   { name: 'bonded ', file: 'discovery/bonded.mjs' },
-  // New-pairs discovery is intentionally NOT part of this public repo.
 ];
 
 let shuttingDown = false;

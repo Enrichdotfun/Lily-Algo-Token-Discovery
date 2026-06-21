@@ -14,6 +14,7 @@ import { getCoins, getFeedMeta } from '../discovery/lib/db.mjs';
 const FEEDS = {
   old: { file: 'old.json', freshMs: config.old.activeMs * 2 },
   bonded: { file: 'bonded.json', freshMs: config.bonded.trackMs },
+  new: { file: 'new.json', freshMs: config.newPairs.trackMs },
 };
 
 const API_KEYS = new Set(config.apiKeys.split(',').map((s) => s.trim()).filter(Boolean));
@@ -106,6 +107,7 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/api/old') return send(res, 200, await buildFeed('old'));
     if (p === '/api/bonded') return send(res, 200, await buildFeed('bonded'));
+    if (p === '/api/new') return send(res, 200, await buildFeed('new'));
 
     if (p === '/api/token-meta') {
       const mints = (url.searchParams.get('mints') || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 60);
@@ -119,5 +121,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(config.port, () => {
   console.log(`[api] http://localhost:${config.port}  keys:${API_KEYS.size ? 'on' : 'off'}  rate:${config.rateLimitPerMin}/min`);
-  console.log('      /api/old /api/bonded /api/token-meta /api/health');
+  console.log('      /api/old /api/new /api/bonded /api/token-meta /api/health');
 });

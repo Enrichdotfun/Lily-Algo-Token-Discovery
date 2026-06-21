@@ -63,6 +63,17 @@ export const config = {
     trackMs: num('BONDED_TRACK_MS', 60 * 60 * 1000),
     earlyWindowMs: num('BONDED_EARLY_WINDOW_MS', 60_000),
   },
+
+  // New pairs (pre-bond). Launches are a firehose, so cost is bounded by a watch
+  // cap + a traction gate (only spend RPC on coins that actually get traded).
+  newPairs: {
+    trackMs: num('NEWPAIRS_TRACK_MS', 30 * 60 * 1000),
+    earlyWindowMs: num('NEWPAIRS_EARLY_WINDOW_MS', 60_000),
+    minMcapSolToWatch: num('NEWPAIRS_MIN_MCAP_SOL', 0), // entry floor from the create event (0 = watch all, capped)
+    minTradesToGate: num('NEWPAIRS_MIN_TRADES', 6),     // traction before spending RPC gating it
+    maxWatch: num('NEWPAIRS_MAX_WATCH', 300),           // cap concurrent trade subscriptions
+    pruneMs: num('NEWPAIRS_PRUNE_MS', 5 * 60 * 1000),   // drop no-traction coins after this
+  },
 };
 
 // pump.fun public program + AMM/pool program ids (publicly known constants).
