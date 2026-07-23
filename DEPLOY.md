@@ -2,13 +2,15 @@
 
 Lily has two deployable parts:
 
-- **Backend** — the API server + the Old-prebond and Bonded discovery daemons
-  (one always-on Node process group via `npm start`). This is the only thing that
-  talks to your RPC + PumpPortal, and it owns the SQLite database.
+- **Backend** — the API server plus the four discovery daemons: Old-prebond,
+  New-pairs, Bonded and the Watchdog (one always-on Node process group via
+  `npm start`). This is the only thing that talks to your RPC + PumpPortal, and it
+  owns the SQLite database.
 - **Frontend** — the static Vite/React UI (`npm run build` → `dist/`).
 
-> The on-chain work is done **once** by the backend. Serving the API to many
+> The on-chain work is done **once** by the backend. Serving the feeds to many
 > readers does **not** multiply RPC cost — consumers just read precomputed data.
+> (`/api/token-meta` is the exception; it resolves uncached mints on demand.)
 
 ---
 
@@ -62,7 +64,7 @@ works behind the `/lily` subpath with no rewrite hacks.
 
 ### 1. Backend on Render
 Deploy the blueprint (above) → set `SOLANA_RPC_URL` → note the public URL, e.g.
-`https://lily-api.onrender.com`.
+`https://<your-backend>.onrender.com`.
 
 ### 2. Frontend as its own Vercel project
 Import the repo as a **new Vercel project** and set two **Environment Variables**
@@ -70,7 +72,7 @@ Import the repo as a **new Vercel project** and set two **Environment Variables*
 
 ```
 VITE_BASE     = /lily/
-VITE_API_URL  = https://lily-api.onrender.com
+VITE_API_URL  = https://<your-backend>.onrender.com
 ```
 
 `vercel.json` pins the build/output and redirects the project root to `/lily/`,
@@ -101,17 +103,24 @@ backend; build with `VITE_BASE=/lily/` and `VITE_API_URL=""` (same-origin `/api`
 
 ---
 
-## Public API for algo traders
+## HTTP API
 
-Once deployed, consumers can poll:
+Nothing is hosted for you — this is the API *your* deployment exposes. Consumers
+can then poll (add `?key=...` or an `x-api-key` header if `LILY_API_KEYS` is set):
 
 ```
-GET /api/bonded     # fresh graduates; use ?key=... if LILY_API_KEYS is set
-GET /api/old        # reawakened old pre-bond coins
-GET /api/health
+GET /api/old          # reawakened old pre-bond coins
+GET /api/new          # gated fresh launches
+GET /api/bonded       # gated graduates
+GET /api/token-meta   # ?mints=<comma-separated> — name / symbol / image
+GET /api/watchdog     # last re-verification pass (quarantine, revivals)
+GET /api/health       # liveness; open by design so health checks need no key
 ```
 
 - Responses are JSON, CORS-open, cached ~2s, and rate-limited
   (`RATE_LIMIT_PER_MIN`, per key or per IP).
 - Set `LILY_API_KEYS` (comma-separated) to require a key; hand each consumer one.
-- Cost stays flat as readers grow — they read cached output, not the chain.
+  Every route except `/api/health` is then gated.
+- Feed cost stays flat as readers grow — they read cached output, not the chain.
+  `/api/token-meta` is the exception: uncached mints are resolved against the
+  pump.fun API on demand (capped at 25 per request).

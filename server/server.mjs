@@ -120,8 +120,9 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${config.port}`);
     const p = url.pathname;
     if (req.method === 'OPTIONS') return send(res, 204, {});
+    // Liveness only — deliberately open (no key, no rate limit) so platform
+    // health checks keep working when LILY_API_KEYS is set. It returns no data.
     if (p === '/api/health') return send(res, 200, { ok: true, time: Date.now() });
-    if (p === '/api/watchdog') return send(res, 200, readSnapshot('watchdog.json') || { lastRun: 0, tradableCount: 0, leakCount: 0, leaks: [], quarantine: [] });
 
     // rate limit + auth for everything else
     const id = (req.headers['x-api-key'] || url.searchParams.get('key') || req.socket.remoteAddress || 'anon');
@@ -131,6 +132,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/old') return send(res, 200, await buildFeed('old'));
     if (p === '/api/bonded') return send(res, 200, await buildFeed('bonded'));
     if (p === '/api/new') return send(res, 200, await buildFeed('new'));
+    if (p === '/api/watchdog') return send(res, 200, readSnapshot('watchdog.json') || { lastRun: 0, tradableCount: 0, leakCount: 0, leaks: [], quarantine: [] });
 
     if (p === '/api/token-meta') {
       const mints = (url.searchParams.get('mints') || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 60);

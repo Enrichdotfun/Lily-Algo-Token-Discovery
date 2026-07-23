@@ -14,7 +14,9 @@
     "preview": "vite preview",
     "api": "node server/server.mjs",
     "discover:old": "node discovery/old-prebond.mjs",
+    "discover:new": "node discovery/new-pairs.mjs",
     "discover:bonded": "node discovery/bonded.mjs",
+    "watchdog": "node discovery/watchdog.mjs",
     "start": "node scripts/start-all.mjs"
   },
   "dependencies": {

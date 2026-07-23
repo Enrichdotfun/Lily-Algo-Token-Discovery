@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 // The UI talks to the API server via /api (proxied in dev).
 //   VITE_BASE     — public base path (set to "/lily/" when hosting at enrich.fun/lily)
-//   VITE_API_URL  — absolute API origin in production (e.g. https://lily-api.onrender.com)
+//   VITE_API_URL  — absolute API origin in production (e.g. https://<your-backend>.onrender.com)
 //   PORT          — local API port for the dev proxy
 const apiPort = process.env.PORT || '8787';
 

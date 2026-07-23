@@ -65,9 +65,11 @@ count, age, dev (creator) %, top-10 holder concentration, and the gate verdict.
 discovery/
   lib/   config · PumpPortal WS client · Solana RPC (Token-2022 safe) ·
          gates · SQLite store · sol price · request metrics
-  old-prebond.mjs   reawakened old coins   -> SQLite (feed "old")
-  bonded.mjs        migrations + gating    -> SQLite (feed "bonded")
-server/server.mjs   public read API (CORS, cache, optional keys, rate limit)
+  old-prebond.mjs   reawakened old coins    -> SQLite (feed "old")
+  new-pairs.mjs     fresh launches + gates  -> SQLite (feed "new")
+  bonded.mjs        migrations + gates      -> SQLite (feed "bonded")
+  watchdog.mjs      re-verifies Tradable coins, quarantines leaks
+server/server.mjs   read API (CORS, cache, optional keys, rate limit)
 src/                Vite + React UI (three-column board)
 ```
 
@@ -92,23 +94,33 @@ section's **live API request rate** so you can watch your load.
 Two terminals:
 
 ```bash
-npm start      # API server + Old/Bonded discovery daemons (auto-restart)
+npm start      # API server + all four discovery daemons (auto-restart)
 npm run dev    # the UI at http://localhost:5174
 ```
 
-Or individually: `npm run api`, `npm run discover:old`, `npm run discover:bonded`.
+Or individually: `npm run api`, `npm run discover:old`, `npm run discover:new`,
+`npm run discover:bonded`, `npm run watchdog`.
 
-## Public API
+## HTTP API
 
-The backend exposes precomputed JSON (CORS-open, ~2s cache, optional API keys via
-`LILY_API_KEYS`, rate-limited via `RATE_LIMIT_PER_MIN`):
+There is no hosted Lily service — you run the backend yourself. Once it's up it
+serves precomputed JSON (CORS-open, ~2s cache, optional keys via `LILY_API_KEYS`,
+rate-limited via `RATE_LIMIT_PER_MIN`):
 
 ```
-GET /api/old        GET /api/bonded        GET /api/health
+GET /api/old          reawakened old pre-bond coins
+GET /api/new          gated fresh launches
+GET /api/bonded       gated graduates
+GET /api/token-meta   ?mints=<comma-separated>  — name / symbol / image
+GET /api/watchdog     last re-verification pass (quarantine, revivals)
+GET /api/health       liveness — the one route that skips auth + rate limit,
+                      so host health checks work without a key
 ```
 
-Because discovery runs once on the backend, serving these to many consumers does
-**not** increase RPC cost — readers just read cached output.
+Discovery runs once on the backend, so serving the three feeds to many consumers
+does **not** increase RPC cost — readers just read cached output. The exception is
+`/api/token-meta`, which resolves uncached mints against the pump.fun API on
+demand (capped at 25 per request).
 
 ## Deploy
 
