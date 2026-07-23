@@ -4,6 +4,13 @@
 
 <h1 align="center">Lily</h1>
 
+> [!NOTE]
+> This is an earlier version — the build I run now is drastically improved. The
+> public one is a bit more expensive to run, since it leans on the RPC for
+> real-time coverage. Making it cheaper is an infra change, not a logic one — ask
+> Claude to move discovery and grading to polled Helius RPC, and keep
+> LaserStream / WebSocket for only the coins you want live.
+
 **Real-time [pump.fun](https://pump.fun) token discovery.** Lily watches the chain
 and surfaces coins side by side, filtered by transparent on-chain quality gates —
 so you spend time on *interesting* coins instead of scrolling past obvious rugs.
